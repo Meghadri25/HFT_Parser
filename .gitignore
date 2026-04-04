@@ -1,0 +1,36 @@
+# Simulation outputs and waveforms
+*.vcd
+*.vvp
+*.wdb
+*.wlf
+*.fst
+*.ghw
+
+# Tool-generated logs and reports
+*.log
+*.jou
+*.str
+*.rpt
+*.summary
+
+# Build and work directories
+build/
+out/
+obj_dir/
+work/
+simv*
+csrc/
+
+# Temporary/editor files
+*.tmp
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python cache (if scripts are added later)
+__pycache__/
+*.pyc
