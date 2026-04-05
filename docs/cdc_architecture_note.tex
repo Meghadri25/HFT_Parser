@@ -1,0 +1,82 @@
+\documentclass[10pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\title{HFT-FPGA CDC Architecture Note}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+This note summarizes the clock-domain organization for the CDC-enabled wrappers in the RTL. The original protocol cores remain single-clock reference implementations, while wrapper modules add safe stream crossing with reusable CDC primitives.
+
+\section*{CDC Building Blocks}
+\begin{itemize}
+    \item \textbf{async\_fifo.sv}: Dual-clock FIFO using Gray-coded pointers and synchronizer stages for pointer crossing.
+    \item \textbf{cdc\_level\_sync.sv}: Multi-flop synchronizer for stable single-bit levels.
+    \item \textbf{cdc\_pulse\_sync.sv}: Toggle/ack based pulse transfer for one-shot events.
+\end{itemize}
+
+\section*{Wrapper Domain Map}
+\subsection*{tcp\_send\_framer\_cdc.sv}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.22\linewidth} >{\raggedright\arraybackslash}p{0.20\linewidth} >{\raggedright\arraybackslash}p{0.50\linewidth}}
+\toprule
+\textbf{Signal Group} & \textbf{Domain} & \textbf{Notes} \\
+\midrule
+\endhead
+Control in (\texttt{start}, \texttt{payload\_length}) & \texttt{in\_clk} & Drives the single-clock core instance. \\
+Payload in (\texttt{in\_valid/data/sop/eop/error}) & \texttt{in\_clk} & Consumed by \texttt{tcp\_send\_framer}. \\
+Core stream out (\texttt{core\_out\_*}) & \texttt{in\_clk} & Packed into FIFO write data. \\
+FIFO read stream (\texttt{out\_valid/data/sop/eop/error}) & \texttt{out\_clk} & Unpacked from FIFO read side. \\
+\texttt{busy} output & \texttt{out\_clk} & Busy level synchronized from core plus FIFO occupancy indication. \\
+\texttt{done} output & \texttt{out\_clk} & Reconstructed as a pulse on final output beat transfer. \\
+\bottomrule
+\end{longtable}
+
+\subsection*{tcp\_receive\_parser\_cdc.sv}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.22\linewidth} >{\raggedright\arraybackslash}p{0.20\linewidth} >{\raggedright\arraybackslash}p{0.50\linewidth}}
+\toprule
+\textbf{Signal Group} & \textbf{Domain} & \textbf{Notes} \\
+\midrule
+\endhead
+Input stream (\texttt{in\_valid/data/sop/eop/error}) & \texttt{in\_clk} & Parsed by \texttt{tcp\_receive\_parser} core. \\
+Parsed payload out (\texttt{out\_valid/data/sop/eop}) & \texttt{out\_clk} & Crossed via async FIFO. \\
+Metadata (\texttt{message\_valid/error/length}) & \texttt{in\_clk} & Exposed directly from core domain in current wrapper. \\
+\bottomrule
+\end{longtable}
+
+\subsection*{udp\_receive\_parser\_cdc.sv}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.22\linewidth} >{\raggedright\arraybackslash}p{0.20\linewidth} >{\raggedright\arraybackslash}p{0.50\linewidth}}
+\toprule
+\textbf{Signal Group} & \textbf{Domain} & \textbf{Notes} \\
+\midrule
+\endhead
+Input stream (\texttt{in\_valid/data/sop/eop/error}) & \texttt{in\_clk} & Parsed by \texttt{udp\_receive\_parser} core. \\
+Payload out (\texttt{out\_valid/data/sop/eop}) & \texttt{out\_clk} & Crossed via async FIFO. \\
+Header/status metadata (\texttt{src\_port}, \texttt{dst\_port}, \texttt{udp\_length}, \texttt{payload\_length}, \texttt{packet\_valid/error}) & \texttt{in\_clk} & Exposed directly from core domain in current wrapper. \\
+\bottomrule
+\end{longtable}
+
+\section*{Integration Guidance}
+\begin{itemize}
+    \item Treat parser metadata in wrappers as \texttt{in\_clk}-domain outputs unless explicit synchronizers are added.
+    \item Consume wrapper stream outputs in \texttt{out\_clk} domain only.
+    \item Keep CDC crossing centralized in shared primitives to avoid ad-hoc per-module CDC logic.
+\end{itemize}
+
+\section*{Verification Notes}
+Current testbench split:
+\begin{itemize}
+    \item Single-clock golden tests for core protocol modules.
+    \item CDC primitive tests for FIFO and synchronizers.
+    \item CDC wrapper tests for cross-clock stream behavior.
+\end{itemize}
+
+\end{document}
