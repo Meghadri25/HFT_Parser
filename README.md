@@ -5,6 +5,7 @@ Low-latency packet parsing and framing modules in SystemVerilog for FPGA workflo
 ## Repository Layout
 
 - `rtl/` : synthesizable modules
+  - `eth_parser_fanout.sv`
   - `tcp_receive_parser.sv`
   - `tcp_send_framer.sv`
   - `udp_receive_parser.sv`
@@ -30,6 +31,7 @@ Low-latency packet parsing and framing modules in SystemVerilog for FPGA workflo
 - `tcp_receive_parser` : extracts relevant fields/payload from incoming TCP streams.
 - `tcp_send_framer` : frames outgoing TCP payloads/metadata for transmission.
 - `udp_receive_parser` : parses UDP packets for downstream logic.
+- `eth_parser_fanout` : top-level integration wrapper that instantiates `eth_parser` and fans the parsed stream into both UDP/TCP receive parsers.
 - CDC-capable wrappers are provided for each protocol module, along with reusable async FIFO and synchronizer primitives.
 
 ## Getting Started

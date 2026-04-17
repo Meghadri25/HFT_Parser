@@ -9,18 +9,21 @@ module udp_receive_parser_cdc_tb;
 
     logic rst_n;
 
-    logic       in_valid;
-    logic       in_ready;
-    logic [7:0] in_data;
-    logic       in_sop;
-    logic       in_eop;
-    logic       in_error;
+    logic [31:0] s_axis_tdata;
+    logic [3:0]  s_axis_tkeep;
+    logic        s_axis_tvalid;
+    logic        s_axis_tready;
+    logic        s_axis_tlast;
 
-    logic       out_valid;
-    logic       out_ready;
-    logic [7:0] out_data;
-    logic       out_sop;
-    logic       out_eop;
+    logic        eth_packet_valid;
+    logic [15:0] eth_src_port;
+    logic [15:0] eth_dst_port;
+
+    logic [31:0] m_axis_tdata;
+    logic [3:0]  m_axis_tkeep;
+    logic        m_axis_tvalid;
+    logic        m_axis_tready;
+    logic        m_axis_tlast;
 
     logic       packet_valid;
     logic       packet_error;
@@ -28,6 +31,14 @@ module udp_receive_parser_cdc_tb;
     logic [15:0] dst_port;
     logic [15:0] udp_length;
     logic [15:0] payload_length;
+    logic        pillar_msg_valid;
+    logic [2:0]  pillar_msg_type;
+    logic        pillar_side;
+    logic [7:0]  pillar_symbol_id;
+    logic [15:0] pillar_order_id;
+    logic [11:0] pillar_price_idx;
+    logic [15:0] pillar_sequence_num;
+    logic [31:0] pillar_quantity;
 
     logic       packet_valid_seen;
 
@@ -35,66 +46,54 @@ module udp_receive_parser_cdc_tb;
         .in_clk(in_clk),
         .out_clk(out_clk),
         .rst_n(rst_n),
-        .in_valid(in_valid),
-        .in_ready(in_ready),
-        .in_data(in_data),
-        .in_sop(in_sop),
-        .in_eop(in_eop),
-        .in_error(in_error),
-        .out_valid(out_valid),
-        .out_ready(out_ready),
-        .out_data(out_data),
-        .out_sop(out_sop),
-        .out_eop(out_eop),
+        .s_axis_tdata(s_axis_tdata),
+        .s_axis_tkeep(s_axis_tkeep),
+        .s_axis_tvalid(s_axis_tvalid),
+        .s_axis_tready(s_axis_tready),
+        .s_axis_tlast(s_axis_tlast),
+        .eth_packet_valid(eth_packet_valid),
+        .eth_src_port(eth_src_port),
+        .eth_dst_port(eth_dst_port),
+        .m_axis_tdata(m_axis_tdata),
+        .m_axis_tkeep(m_axis_tkeep),
+        .m_axis_tvalid(m_axis_tvalid),
+        .m_axis_tready(m_axis_tready),
+        .m_axis_tlast(m_axis_tlast),
         .packet_valid(packet_valid),
         .packet_error(packet_error),
         .src_port(src_port),
         .dst_port(dst_port),
         .udp_length(udp_length),
-        .payload_length(payload_length)
+        .payload_length(payload_length),
+        .pillar_msg_valid(pillar_msg_valid),
+        .pillar_msg_type(pillar_msg_type),
+        .pillar_side(pillar_side),
+        .pillar_symbol_id(pillar_symbol_id),
+        .pillar_order_id(pillar_order_id),
+        .pillar_price_idx(pillar_price_idx),
+        .pillar_sequence_num(pillar_sequence_num),
+        .pillar_quantity(pillar_quantity)
     );
 
-    task automatic drive_byte(
-        input logic [7:0] byte_value,
-        input logic sop,
-        input logic eop,
-        input logic error_flag
+    task automatic drive_word(
+        input logic [31:0] word_value,
+        input logic [3:0]  keep_value,
+        input logic        last_value
     );
         begin
             @(negedge in_clk);
-            in_valid = 1'b1;
-            in_data  = byte_value;
-            in_sop   = sop;
-            in_eop   = eop;
-            in_error = error_flag;
-            @(posedge in_clk);
-            #1;
-            in_valid = 1'b0;
-            in_data  = '0;
-            in_sop   = 1'b0;
-            in_eop   = 1'b0;
-            in_error = 1'b0;
-        end
-    endtask
-
-    task automatic expect_output(input logic [7:0] expected_data, input logic expected_sop, input logic expected_eop);
-        begin
-            out_ready = 1'b0;
+            s_axis_tvalid = 1'b1;
+            s_axis_tdata  = word_value;
+            s_axis_tkeep  = keep_value;
+            s_axis_tlast  = last_value;
             do begin
-                @(posedge out_clk);
-                #1;
-            end while (!out_valid);
-
-            if (out_data !== expected_data || out_sop !== expected_sop || out_eop !== expected_eop) begin
-                $fatal(1, "Output mismatch exp=%02h sop=%0b eop=%0b got=%02h sop=%0b eop=%0b",
-                    expected_data, expected_sop, expected_eop, out_data, out_sop, out_eop);
-            end
-
-            @(negedge out_clk);
-            out_ready = 1'b1;
-            @(posedge out_clk);
+                @(posedge in_clk);
+            end while (!s_axis_tready);
             #1;
-            out_ready = 1'b0;
+            s_axis_tvalid = 1'b0;
+            s_axis_tdata  = '0;
+            s_axis_tkeep  = '0;
+            s_axis_tlast  = 1'b0;
         end
     endtask
 
@@ -108,12 +107,14 @@ module udp_receive_parser_cdc_tb;
 
     initial begin
         rst_n = 1'b0;
-        in_valid = 1'b0;
-        in_data  = '0;
-        in_sop   = 1'b0;
-        in_eop   = 1'b0;
-        in_error = 1'b0;
-        out_ready = 1'b0;
+        s_axis_tvalid = 1'b0;
+        s_axis_tdata  = '0;
+        s_axis_tkeep  = '0;
+        s_axis_tlast  = 1'b0;
+        m_axis_tready = 1'b1;
+        eth_packet_valid = 1'b1;
+        eth_src_port = 16'h1234;
+        eth_dst_port = 16'h5678;
         packet_valid_seen = 1'b0;
 
         repeat (3) @(posedge in_clk);
@@ -121,28 +122,37 @@ module udp_receive_parser_cdc_tb;
         rst_n = 1'b1;
         @(posedge in_clk);
 
-        drive_byte(8'h12, 1'b1, 1'b0, 1'b0);
-        drive_byte(8'h34, 1'b0, 1'b0, 1'b0);
-        drive_byte(8'h56, 1'b0, 1'b0, 1'b0);
-        drive_byte(8'h78, 1'b0, 1'b0, 1'b0);
-        drive_byte(8'h00, 1'b0, 1'b0, 1'b0);
-        drive_byte(8'h0C, 1'b0, 1'b0, 1'b0);
-        drive_byte(8'h00, 1'b0, 1'b0, 1'b0);
-        drive_byte(8'h00, 1'b0, 1'b0, 1'b0);
-        drive_byte(8'hAA, 1'b0, 1'b0, 1'b0);
-        drive_byte(8'hBB, 1'b0, 1'b0, 1'b0);
-        drive_byte(8'hCC, 1'b0, 1'b1, 1'b0);
+        drive_word(32'h00000000, 4'hF, 1'b0);
+        drive_word(32'h00000000, 4'hF, 1'b0);
+        drive_word(32'h00000000, 4'hF, 1'b0);
+        drive_word(32'h45000000, 4'hF, 1'b0);
+        drive_word(32'h00002800, 4'hF, 1'b0);
+        drive_word(32'h11000000, 4'hF, 1'b0);
+        drive_word(32'h00000000, 4'hF, 1'b0);
+        drive_word(32'h00000000, 4'hF, 1'b0);
+        drive_word(32'h00000000, 4'hF, 1'b0);
+        drive_word(32'h14000000, 4'hF, 1'b0);
+        drive_word(32'h33090000, 4'hF, 1'b0);
+        drive_word(32'h05C3A1B2, 4'hF, 1'b0);
+        drive_word(32'hF4A91234, 4'hF, 1'b0);
+        drive_word(32'h00000001, 4'h3, 1'b1);
 
-        expect_output(8'hAA, 1'b1, 1'b0);
-        expect_output(8'hBB, 1'b0, 1'b0);
-        expect_output(8'hCC, 1'b0, 1'b1);
+        repeat (6) @(posedge out_clk);
 
         if (src_port !== 16'h1234) $fatal(1, "src_port mismatch: %04h", src_port);
         if (dst_port !== 16'h5678) $fatal(1, "dst_port mismatch: %04h", dst_port);
-        if (udp_length !== 16'h000C) $fatal(1, "udp_length mismatch: %04h", udp_length);
-        if (payload_length !== 16'h0004) $fatal(1, "payload_length mismatch: %04h", payload_length);
+        if (udp_length !== 16'h0014) $fatal(1, "udp_length mismatch: %04h", udp_length);
+        if (payload_length !== 16'h000C) $fatal(1, "payload_length mismatch: %04h", payload_length);
         if (!packet_valid_seen) $fatal(1, "packet_valid did not pulse");
         if (packet_error) $fatal(1, "packet_error should be low for a valid packet");
+        if (!pillar_msg_valid) $fatal(1, "pillar_msg_valid did not pulse");
+        if (pillar_msg_type !== 3'b001) $fatal(1, "pillar_msg_type mismatch: %0d", pillar_msg_type);
+        if (pillar_side !== 1'b1) $fatal(1, "pillar_side mismatch");
+        if (pillar_symbol_id !== 8'h33) $fatal(1, "pillar_symbol_id mismatch: %02h", pillar_symbol_id);
+        if (pillar_order_id !== 16'hA1B2) $fatal(1, "pillar_order_id mismatch: %04h", pillar_order_id);
+        if (pillar_price_idx !== 12'h5C3) $fatal(1, "pillar_price_idx mismatch: %03h", pillar_price_idx);
+        if (pillar_sequence_num !== 16'h1234) $fatal(1, "pillar_sequence_num mismatch: %04h", pillar_sequence_num);
+        if (pillar_quantity !== 32'h0001F4A9) $fatal(1, "pillar_quantity mismatch: %08h", pillar_quantity);
 
         $display("udp_receive_parser_cdc_tb PASSED");
         $finish;
